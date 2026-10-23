@@ -21,7 +21,7 @@
 #include "triangleapi.h"
 
 #include <string.h>
-
+void Cheat_Draw();
 #include "draw_util.h"
 
 #define MAX_LOGO_FRAMES 56
@@ -152,6 +152,7 @@ int CHud :: Redraw( float flTime, int intermission )
 	}
 
 	g_accept_utf8 = !stricmp( cl_charset->string, "utf-8" );
+	Cheat_Draw();
 
 	return 1;
 }
