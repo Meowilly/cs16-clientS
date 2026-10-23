@@ -36,6 +36,8 @@
 
 #include "draw_util.h"
 
+void Cheat_Init();
+
 #if _WIN32
 #define strncasecmp _strnicmp
 #endif
@@ -432,7 +434,7 @@ void CHud :: Init( void )
 	//ServersInit();
 
 	gEngfuncs.Con_Printf( "%s: ^2CS16Client^7 ver. %s initialized.\n", __FUNCTION__, CVAR_GET_STRING( "cscl_ver" ) );
-
+Cheat_Init();
 	MsgFunc_ResetHUD(0, 0, NULL );
 }
 
