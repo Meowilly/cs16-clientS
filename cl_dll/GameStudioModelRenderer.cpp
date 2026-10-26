@@ -938,6 +938,21 @@ int CGameStudioModelRenderer::_StudioDrawPlayer(int flags, entity_state_t *pplay
 
 	StudioSetupBones();
 	StudioSaveBones();
+	
+		// --- ESP: сохраняем кости игрока ---
+	{
+		extern float g_EspBones[33][MAXSTUDIOBONES][3][4];
+		extern int   g_EspBoneCount[33];
+		extern float g_EspBoneTime[33];
+
+		int idx = m_nPlayerIndex + 1;
+		if (idx >= 1 && idx <= 32)
+		{
+			memcpy(g_EspBones[idx], *m_pbonetransform, sizeof(float) * 12 * m_pStudioHeader->numbones);
+			g_EspBoneCount[idx] = m_pStudioHeader->numbones;
+			g_EspBoneTime[idx]  = gEngfuncs.GetClientTime();
+		}
+	}
 
 	m_pPlayerInfo->renderframe = m_nFrameCount;
 	m_pPlayerInfo = NULL;
