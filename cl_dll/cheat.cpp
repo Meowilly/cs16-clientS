@@ -5,7 +5,6 @@
 //   1. ESP: скелет + круг головы, бокс, дистанция, радиус показа
 //   2. Автошут (триггербот): стреляет, когда прицел уже на враге, доводки нет
 //   3. Круговое меню (зажми бинд, веди мышью, отпусти) - как закупка CS:GO
-//   4. Меню настройки биндов (клавиатурное)
 //
 // Команды / cvar:
 //   ch_esp 0/1/2        выкл / скелет + круг головы / то же + бокс
@@ -20,13 +19,11 @@
 //   ch_auto_toggle      вкл/выкл автошут
 //   ch_alloff           выключить всё
 //   +ch_menu / -ch_menu круговое меню
-//   ch_binds            меню биндов
 //
 // Подключение (подробно в конце файла):
 //   hud.cpp          CHud::Init()      -> Cheat_Init()
 //   hud_redraw.cpp   CHud::Redraw()    -> Cheat_Draw()
 //   input.cpp        CL_CreateMove()   -> Cheat_Auto(cmd) + блок стрельбы при открытом меню
-//   input.cpp        HUD_Key_Event()   -> Cheat_BindsKey(down, keynum)
 //   (хук мыши не нужен: меню берёт дельту из поворота камеры внутри Cheat_Auto)
 //   cl_util.h        объявления (см. ниже)
 
@@ -41,7 +38,6 @@
 #include "pm_defs.h"
 #include "event_api.h"
 #include "in_defs.h"
-#include "keydefs.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -598,226 +594,6 @@ static void DrawMenu()
 }
 
 // ===========================================================================
-// 4. Меню биндов
-// ===========================================================================
-
-struct BindRow
-{
-	const char *title;
-	const char *cmd;
-};
-
-static const BindRow g_Rows[] =
-{
-	{ "Skeleton",    "ch_toggle"      },
-	{ "Box",         "ch_box_toggle"  },
-	{ "Distance",    "ch_dist_toggle" },
-	{ "Autoshoot",   "ch_auto_toggle" },
-	{ "Bhop",        "ch_bhop_toggle" },
-	{ "Radial menu", "+ch_menu"       },
-	{ "All OFF",     "ch_alloff"      }
-};
-static const int ROWS = sizeof(g_Rows) / sizeof(g_Rows[0]);
-
-static bool g_BindsOpen = false;
-static bool g_BindsWait = false;
-static int  g_BindsSel  = 0;
-
-// keynum -> имя клавиши для команды bind
-// Если в твоём keydefs.h есть K_RSHIFT, добавь: case K_RSHIFT: return "RSHIFT";
-static const char *KeyName(int k, char *buf)
-{
-	if ((k >= 'a' && k <= 'z') || (k >= '0' && k <= '9') ||
-	    k == '-' || k == '=' || k == '[' || k == ']' ||
-	    k == '\\' || k == ',' || k == '.' || k == '/')
-	{
-		buf[0] = (char)k;
-		buf[1] = 0;
-		return buf;
-	}
-
-	switch (k)
-	{
-	case K_SPACE:      return "space";
-	case K_TAB:        return "TAB";
-	case K_ENTER:      return "ENTER";
-	case K_UPARROW:    return "UPARROW";
-	case K_DOWNARROW:  return "DOWNARROW";
-	case K_LEFTARROW:  return "LEFTARROW";
-	case K_RIGHTARROW: return "RIGHTARROW";
-	case K_SHIFT:      return "SHIFT";
-	case K_CTRL:       return "CTRL";
-	case K_ALT:        return "ALT";
-	case K_F1:  return "F1";
-	case K_F2:  return "F2";
-	case K_F3:  return "F3";
-	case K_F4:  return "F4";
-	case K_F5:  return "F5";
-	case K_F6:  return "F6";
-	case K_F7:  return "F7";
-	case K_F8:  return "F8";
-	case K_F9:  return "F9";
-	case K_F10: return "F10";
-	case K_F11: return "F11";
-	case K_F12: return "F12";
-	case K_INS:  return "INS";
-	case K_DEL:  return "DEL";
-	case K_PGUP: return "PGUP";
-	case K_PGDN: return "PGDN";
-	case K_HOME: return "HOME";
-	case K_END:  return "END";
-	case K_MOUSE3: return "MOUSE3";
-	case K_MOUSE4: return "MOUSE4";
-	case K_MOUSE5: return "MOUSE5";
-	}
-	return NULL;
-}
-
-static const char *Bound(const char *cmd)
-{
-	const char *k = gEngfuncs.Key_LookupBinding(cmd);
-	if (!k || !k[0] || k[0] == '<')
-		return NULL;
-	return k;
-}
-
-static void UnbindRow(int row)
-{
-	const char *old = Bound(g_Rows[row].cmd);
-	if (!old)
-		return;
-
-	char line[96];
-	snprintf(line, sizeof(line), "unbind \"%s\"\n", old);
-	gEngfuncs.pfnClientCmd(line);
-}
-
-static void RebindRow(int row, const char *name)
-{
-	UnbindRow(row);
-
-	char line[160];
-	snprintf(line, sizeof(line), "bind \"%s\" \"%s\"\n", name, g_Rows[row].cmd);
-	gEngfuncs.pfnClientCmd(line);
-}
-
-static void BindsToggle()
-{
-	if (g_BindsOpen)
-	{
-		g_BindsOpen = g_BindsWait = false;
-		return;
-	}
-	if (!CheatsOn())
-	{
-		gEngfuncs.Con_Printf("ch_binds: need sv_cheats 1\n");
-		return;
-	}
-	g_BindsOpen = true;
-	g_BindsWait = false;
-	g_BindsSel  = 0;
-}
-
-// true = событие забрало меню, движку отдавать не надо
-bool Cheat_BindsKey(int down, int key)
-{
-	if (!g_BindsOpen)
-		return false;
-	if (!down)
-		return true;
-
-	if (g_BindsWait)
-	{
-		if (key == K_ESCAPE)
-		{
-			g_BindsWait = false;
-			return true;
-		}
-
-		// ' (само меню) и ` (консоль) не отдаём
-		if (key == '\'' || key == '`' || key == '~')
-			return true;
-
-		char buf[2];
-		const char *name = KeyName(key, buf);
-		if (!name)
-			return true; // клавиша без имени - ждём другую
-
-		RebindRow(g_BindsSel, name);
-		g_BindsWait = false;
-		return true;
-	}
-
-	switch (key)
-	{
-	case K_UPARROW:   g_BindsSel = (g_BindsSel + ROWS - 1) % ROWS; break;
-	case K_DOWNARROW: g_BindsSel = (g_BindsSel + 1) % ROWS;        break;
-	case K_ENTER:     g_BindsWait = true;                          break;
-	case K_BACKSPACE:
-	case K_DEL:       UnbindRow(g_BindsSel);                       break;
-	case K_ESCAPE:
-	case '\'':        g_BindsOpen = false;                         break;
-	}
-	return true;
-}
-
-static void DrawBinds()
-{
-	if (!g_BindsOpen)
-		return;
-
-	if (!CheatsOn())
-	{
-		g_BindsOpen = g_BindsWait = false;
-		return;
-	}
-
-	const int W = 380, ROW_H = 26;
-	int H  = 70 + ROWS * ROW_H;
-	int x0 = ScreenWidth  / 2 - W / 2;
-	int y0 = ScreenHeight / 2 - H / 2;
-
-	gEngfuncs.pfnFillRGBA(x0, y0, W, H, 0, 0, 0, 170);
-	gEngfuncs.pfnFillRGBA(x0, y0, W, 2, 255, 200, 0, 255);
-
-	gEngfuncs.pfnDrawSetTextColor(1.0f, 0.8f, 0.0f);
-	gEngfuncs.pfnDrawConsoleString(x0 + 14, y0 + 12, (char *)"BINDS");
-
-	for (int i = 0; i < ROWS; i++)
-	{
-		int ry = y0 + 36 + i * ROW_H;
-
-		if (i == g_BindsSel)
-		{
-			gEngfuncs.pfnFillRGBA(x0 + 8, ry - 4, W - 16, ROW_H - 2, 255, 200, 0, 170);
-			gEngfuncs.pfnDrawSetTextColor(0.0f, 0.0f, 0.0f);
-		}
-		else
-		{
-			gEngfuncs.pfnDrawSetTextColor(1.0f, 1.0f, 1.0f);
-		}
-
-		gEngfuncs.pfnDrawConsoleString(x0 + 18, ry, (char *)g_Rows[i].title);
-
-		char key[40];
-		if (i == g_BindsSel && g_BindsWait)
-		{
-			snprintf(key, sizeof(key), "press key...");
-		}
-		else
-		{
-			const char *b = Bound(g_Rows[i].cmd);
-			snprintf(key, sizeof(key), "[%s]", b ? b : "none");
-		}
-		gEngfuncs.pfnDrawConsoleString(x0 + 230, ry, key);
-	}
-
-	gEngfuncs.pfnDrawSetTextColor(0.7f, 0.7f, 0.7f);
-	gEngfuncs.pfnDrawConsoleString(x0 + 14, y0 + H - 22,
-		(char *)"UP/DOWN  ENTER=set  DEL=clear  ESC/' = close");
-}
-
-// ===========================================================================
 // Команды, init, публичные точки входа
 // ===========================================================================
 
@@ -871,7 +647,6 @@ void Cheat_Init()
 	gEngfuncs.pfnAddCommand("ch_alloff",      Cmd_AllOff);
 	gEngfuncs.pfnAddCommand("+ch_menu",       MenuOpen);
 	gEngfuncs.pfnAddCommand("-ch_menu",       MenuClose);
-	gEngfuncs.pfnAddCommand("ch_binds",       BindsToggle);
 }
 
 // Вызывать из CHud::Redraw()
@@ -879,7 +654,6 @@ void Cheat_Draw()
 {
 	// меню рисуем первыми: они не зависят от того, включён ли ESP
 	DrawMenu();
-	DrawBinds();
 
 	// работаем только там, где сервер разрешил читы
 	if (!CheatsOn())
@@ -973,12 +747,10 @@ void Cheat_Auto(struct usercmd_s *cmd)
 	void Cheat_Auto(struct usercmd_s *cmd);
 	bool Cheat_MenuIsOpen();
 	bool Cheat_MenuMouse(int dx, int dy);
-	bool Cheat_BindsKey(int down, int key);
 
  hud.cpp:           Cheat_Init() в конце CHud::Init()
  hud_redraw.cpp:    Cheat_Draw() в CHud::Redraw()
  input.cpp:         Cheat_Auto(cmd) в конце CL_CreateMove()
- input.cpp:         в начале HUD_Key_Event():  if (Cheat_BindsKey(down, keynum)) return 0;
  IN_MouseMove:      хук не нужен. Cheat_Auto(cmd) должен вызываться ПОСЛЕ того, как
                     CL_CreateMove применил мышь и записал cmd->viewangles (в самом конце).
                     Скорость курсора меню: ch_menu_sens (пикселей на градус, 12 по умолчанию).
@@ -1015,7 +787,6 @@ void Cheat_Auto(struct usercmd_s *cmd)
 	}
 
  Бинды (один раз, в консоли на английской раскладке):
-	bind "'" ch_binds
 	bind RSHIFT +ch_menu
 	(если RSHIFT неизвестна движку - bind SHIFT +ch_menu)
 ===============================================================================
