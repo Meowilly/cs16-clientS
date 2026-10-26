@@ -21,8 +21,9 @@
 #include "triangleapi.h"
 
 #include <string.h>
-void Cheat_Draw();
+
 #include "draw_util.h"
+void Cheat_Draw();
 
 #define MAX_LOGO_FRAMES 56
 
