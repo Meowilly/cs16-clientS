@@ -62,6 +62,8 @@ static void SetCV(const char *name, float v)
 	gEngfuncs.Cvar_SetValue((char *)name, v);
 }
 
+static bool CheatsOn()
+
 // ===========================================================================
 // 1. ESP
 // ===========================================================================
