@@ -1,5 +1,5 @@
 // cl_dll/cheat.cpp  (всё в одном файле)
-// Debug-оверлей для тестов на своём сервере с ботами. Только при sv_cheats 1.
+// Debug-оверлей для тестов на своём сервере с ботами. Без привязки к sv_cheats.
 //
 // Внутри:
 //   1. ESP: скелет + круг головы, бокс, дистанция, радиус показа
@@ -13,7 +13,7 @@
 //   ch_auto 0/1         автошут
 //   ch_bhop 0/1         банихоп: держишь пробел - прыгает сам
 //   ch_bhop_toggle      вкл/выкл банихоп
-//   ch_toggle           вкл/выкл ESP
+//   ch_toggle           вк��/выкл ESP
 //   ch_box_toggle       вкл/выкл бокс
 //   ch_dist_toggle      вкл/выкл дистанцию
 //   ch_auto_toggle      вкл/выкл автошут
@@ -63,6 +63,9 @@ static void SetCV(const char *name, float v)
 }
 
 static bool CheatsOn()
+{
+	return true;
+}
 
 // ===========================================================================
 // 1. ESP
@@ -475,11 +478,6 @@ static int MenuSelected()
 
 static void MenuOpen()
 {
-	if (!CheatsOn())
-	{
-		gEngfuncs.Con_Printf("ch_menu: need sv_cheats 1\n");
-		return;
-	}
 	g_MenuOpen = true;
 	g_mx = g_my = 0.0f;
 	g_HaveAng = false;
@@ -527,13 +525,6 @@ static void DrawMenu()
 {
 	if (!g_MenuOpen)
 		return;
-
-	// сервер выключил читы - закрываем без применения
-	if (!CheatsOn())
-	{
-		g_MenuOpen = false;
-		return;
-	}
 
 	int cx = ScreenWidth / 2;
 	int cy = ScreenHeight / 2;
@@ -657,7 +648,7 @@ void Cheat_Draw()
 	// меню рисуем первыми: они не зависят от того, включён ли ESP
 	DrawMenu();
 
-	// работаем только там, где сервер разрешил читы
+	// Функционал работает без привязки к sv_cheats.
 	if (!CheatsOn())
 		return;
 
@@ -711,8 +702,8 @@ void Cheat_Auto(struct usercmd_s *cmd)
 		return;
 	}
 
-	// банихоп: пока в воздухе, прыжок отпускаем, чтобы при приземлении он нажался заново
-	if (ch_bhop && ch_bhop->value != 0.0f && CheatsOn() && (cmd->buttons & IN_JUMP))
+	// банихоп: пока в воздух��, прыжок отпускаем, чтобы при приземлении он нажался заново
+	if (ch_bhop && ch_bhop->value != 0.0f && (cmd->buttons & IN_JUMP))
 	{
 		cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
 		if (pl && !OnGround(pl))
@@ -720,8 +711,6 @@ void Cheat_Auto(struct usercmd_s *cmd)
 	}
 
 	if (!ch_auto || ch_auto->value == 0.0f)
-		return;
-	if (!CheatsOn())
 		return;
 
 	cl_entity_t *me = gEngfuncs.GetLocalPlayer();
@@ -740,7 +729,7 @@ void Cheat_Auto(struct usercmd_s *cmd)
 }
 
 /*
-===============================================================================
+================================================================================
  ПОДКЛЮЧЕНИЕ
 
  cl_util.h (объявления):
@@ -779,17 +768,9 @@ void Cheat_Auto(struct usercmd_s *cmd)
 		}
 	}
 
- СЕРВЕР (dlls/client.cpp, AddToFullPack) - вид сквозь стены на всю карту:
-
-	if (ent != host)
-	{
-		bool force = CVAR_GET_FLOAT("sv_cheats") != 0 && (ent->v.flags & FL_CLIENT);
-		if (!force && !ENGINE_CHECK_VISIBILITY((const struct edict_s *)ent, pSet))
-			return 0;
-	}
-
  Бинды (один раз, в консоли на английской раскладке):
 	bind RSHIFT +ch_menu
 	(если RSHIFT неизвестна движку - bind SHIFT +ch_menu)
-===============================================================================
+================================================================================
 */
+
