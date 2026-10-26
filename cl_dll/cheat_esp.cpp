@@ -265,10 +265,6 @@ void Cheat_Draw()
 	if (!skel && !showd)
 		return;
 
-	// работаем только там, где сервер разрешил читы
-	if (gEngfuncs.pfnGetCvarFloat("sv_cheats") == 0.0f)
-		return;
-
 	cl_entity_t *me = gEngfuncs.GetLocalPlayer();
 	if (!me)
 		return;
