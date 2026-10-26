@@ -12,6 +12,8 @@
 //   ch_dist 0/1         дистанция
 //   ch_esp_dist N       радиус показа (1000 по умолчанию, 0 = вся карта)
 //   ch_auto 0/1         автошут
+//   ch_bhop 0/1         банихоп: держишь пробел - прыгает сам
+//   ch_bhop_toggle      вкл/выкл банихоп
 //   ch_toggle           вкл/выкл ESP
 //   ch_box_toggle       вкл/выкл бокс
 //   ch_dist_toggle      вкл/выкл дистанцию
@@ -52,6 +54,7 @@ static cvar_t *ch_dist;
 static cvar_t *ch_esp_dist;
 static cvar_t *ch_auto;
 static cvar_t *ch_menu_sens;
+static cvar_t *ch_bhop;
 
 static float CV(const char *name)
 {
@@ -61,11 +64,6 @@ static float CV(const char *name)
 static void SetCV(const char *name, float v)
 {
 	gEngfuncs.Cvar_SetValue((char *)name, v);
-}
-
-static bool CheatsOn()
-{
-	return CV("sv_cheats") != 0.0f;
 }
 
 // ===========================================================================
@@ -375,6 +373,29 @@ static int TraceTarget(cl_entity_t *me)
 	return ent;
 }
 
+// стоит ли игрок на земле (трасса на 2 юнита вниз по хуллу игрока)
+static bool OnGround(cl_entity_t *me)
+{
+	vec3_t org, end;
+	pmtrace_t tr;
+
+	org[0] = me->origin[0];
+	org[1] = me->origin[1];
+	org[2] = me->origin[2];
+	end[0] = org[0];
+	end[1] = org[1];
+	end[2] = org[2] - 2.0f;
+
+	gEngfuncs.pEventAPI->EV_SetUpPlayerPrediction(false, true);
+	gEngfuncs.pEventAPI->EV_PushPMStates();
+	gEngfuncs.pEventAPI->EV_SetSolidPlayers(me->index - 1);
+	gEngfuncs.pEventAPI->EV_SetTraceHull(me->curstate.usehull);
+	gEngfuncs.pEventAPI->EV_PlayerTrace(org, end, PM_NORMAL, me->index, &tr);
+	gEngfuncs.pEventAPI->EV_PopPMStates();
+
+	return tr.fraction < 1.0f && tr.plane.normal[2] >= 0.7f;
+}
+
 // ===========================================================================
 // 3. Круговое меню
 // ===========================================================================
@@ -384,7 +405,7 @@ static float g_mx = 0.0f, g_my = 0.0f; // курсор относительно 
 static float g_SavedAng[3];            // угол обзора на момент открытия меню
 static bool  g_HaveAng = false;
 
-static const int   ITEM_COUNT = 6;
+static const int   ITEM_COUNT = 7;
 static const float R_OUT  = 150.0f;
 static const float R_DEAD = 30.0f;
 static const float R_ITEM = 105.0f;
@@ -407,6 +428,7 @@ static void ItemLabel(int i, char *out, int size)
 		else           snprintf(out, size, "Range [%d]", (int)d);
 		break;
 	}
+	case 5: snprintf(out, size, "Bhop [%s]", OnOff(CV("ch_bhop") != 0.0f)); break;
 	default: snprintf(out, size, "All OFF"); break;
 	}
 }
@@ -427,10 +449,12 @@ static void ItemApply(int i)
 		else                   SetCV("ch_esp_dist", 600.0f);
 		break;
 	}
+	case 5: SetCV("ch_bhop", CV("ch_bhop") != 0.0f ? 0.0f : 1.0f); break;
 	default:
 		SetCV("ch_esp", 0.0f);
 		SetCV("ch_dist", 0.0f);
 		SetCV("ch_auto", 0.0f);
+		SetCV("ch_bhop", 0.0f);
 		break;
 	}
 }
@@ -589,6 +613,7 @@ static const BindRow g_Rows[] =
 	{ "Box",         "ch_box_toggle"  },
 	{ "Distance",    "ch_dist_toggle" },
 	{ "Autoshoot",   "ch_auto_toggle" },
+	{ "Bhop",        "ch_bhop_toggle" },
 	{ "Radial menu", "+ch_menu"       },
 	{ "All OFF",     "ch_alloff"      }
 };
@@ -816,11 +841,17 @@ static void Cmd_AutoToggle()
 	SetCV("ch_auto", CV("ch_auto") != 0.0f ? 0.0f : 1.0f);
 }
 
+static void Cmd_BhopToggle()
+{
+	SetCV("ch_bhop", CV("ch_bhop") != 0.0f ? 0.0f : 1.0f);
+}
+
 static void Cmd_AllOff()
 {
 	SetCV("ch_esp", 0.0f);
 	SetCV("ch_dist", 0.0f);
 	SetCV("ch_auto", 0.0f);
+	SetCV("ch_bhop", 0.0f);
 }
 
 void Cheat_Init()
@@ -830,11 +861,13 @@ void Cheat_Init()
 	ch_esp_dist = gEngfuncs.pfnRegisterVariable("ch_esp_dist", "1000", 0);
 	ch_auto     = gEngfuncs.pfnRegisterVariable("ch_auto", "0", 0);
 	ch_menu_sens = gEngfuncs.pfnRegisterVariable("ch_menu_sens", "12", 0);
+	ch_bhop     = gEngfuncs.pfnRegisterVariable("ch_bhop", "0", 0);
 
 	gEngfuncs.pfnAddCommand("ch_toggle",      Cmd_EspToggle);
 	gEngfuncs.pfnAddCommand("ch_box_toggle",  Cmd_BoxToggle);
 	gEngfuncs.pfnAddCommand("ch_dist_toggle", Cmd_DistToggle);
 	gEngfuncs.pfnAddCommand("ch_auto_toggle", Cmd_AutoToggle);
+	gEngfuncs.pfnAddCommand("ch_bhop_toggle", Cmd_BhopToggle);
 	gEngfuncs.pfnAddCommand("ch_alloff",      Cmd_AllOff);
 	gEngfuncs.pfnAddCommand("+ch_menu",       MenuOpen);
 	gEngfuncs.pfnAddCommand("-ch_menu",       MenuClose);
@@ -900,6 +933,14 @@ void Cheat_Auto(struct usercmd_s *cmd)
 		cmd->viewangles[1] = g_SavedAng[1];
 		cmd->viewangles[2] = g_SavedAng[2];
 		return;
+	}
+
+	// банихоп: пока в воздухе, прыжок отпускаем, чтобы при приземлении он нажался заново
+	if (ch_bhop && ch_bhop->value != 0.0f && CheatsOn() && (cmd->buttons & IN_JUMP))
+	{
+		cl_entity_t *pl = gEngfuncs.GetLocalPlayer();
+		if (pl && !OnGround(pl))
+			cmd->buttons &= ~IN_JUMP;
 	}
 
 	if (!ch_auto || ch_auto->value == 0.0f)
